@@ -1,0 +1,117 @@
+from datetime import datetime, timedelta
+import pandas as pd
+from mfrc522 import SimpleMFRC522
+from gpiozero import LEDCharDisplay, LEDMultiCharDisplay
+import telepot
+import RPi.GPIO as GPIO
+import time
+import requests
+from ubidots import ApiClient
+
+api = ApiClient(token='BBFF-g81T59qSmSYGCjoRcWavaAIbTsZkn0')
+c = LEDCharDisplay(26,4,23,21,13,6,16,active_high=False)
+d = LEDMultiCharDisplay(c,22,27,12,24)
+
+BOT_TOKEN = '5894488561:AAE6dangw4JtC015DYk2QnR5DwSi9upIkbo'
+CHAT_ID = '938940137'
+ApiClient = "BBFF-g81T59qSmSYGCjoRcWavaAIbTsZkn0"
+TOKEN = "BBFF-g81T59qSmSYGCjoRcWavaAIbTsZkn0"
+DEVICE_LABEL = "smart-library"
+VARIABLE_LABEL_1 = "library"
+
+# Konfigurasi API Ubidots
+api_ubidots = token='BBFF-g81T59qSmSYGCjoRcWavaAIbTsZkn0'
+
+def send_notification_to_bot(message):
+    bot = telepot.Bot(token=BOT_TOKEN)
+
+    try:
+        bot.sendMessage(chat_id=CHAT_ID, text=message)
+        print("Notifikasi berhasil dikirim ke bot telegram.")
+    except Exception as e:
+        print("Gagal mengirim notifikasi ke bot telegram:", str(e))
+
+# Definisikan variabel-variabel global
+now = datetime.now()
+peminjaman = now + timedelta (days=2)
+pengembalian = now + timedelta(days=2)
+reader = SimpleMFRC522()
+
+# Fungsi utama untuk memproses pengiriman data
+def main():
+    while True:
+        value_ubidots = api.get_variable('64f4a7ed0616b265464dcb04').get_values()
+        selected_mode = value_ubidots[0]['value']
+       
+        if selected_mode == 1:
+            now = datetime.now()
+            print("Anda telah memilih mode meminjam.")
+            while True:
+                print("Tempelkan kartu untuk meminjam")
+                id_card, text = reader.read()
+                print("ID Kartu:", id_card)
+                print("Text:", text)
+                csvFile = pd.read_csv('bukuperpus.csv')
+                df = pd.DataFrame(csvFile)
+
+                id_card_to_update = id
+                df.loc[df['Id card'] == id_card_to_update, 'Tanggal peminjaman'] = now
+                df.to_csv('bukuperpus.csv', index=False)
+
+                print("Saat ini:", now)
+                print("Tanggal pengembalian:",pengembalian)
+
+                send_notification_to_bot(id_card)
+                send_notification_to_bot("Buku dipinjam pada tanggal " + now.strftime("%Y-%m-%d"))
+                send_notification_to_bot("Pengembalian buku pada tanggal " + pengembalian.strftime("%Y-%m-%d"))
+
+                ulangi = input("Ingin melakukan peminjaman lagi? (y/n): ")
+                if ulangi.lower() != 'y':
+                    break
+
+        elif selected_mode == 2:
+            print("Anda telah memilih mode mengembalikan.")
+            while True:
+                now = datetime.now()
+                print("Tempelkan kartu untuk mengembalikan")
+                id_card, text = reader.read()
+                print("ID Kartu:", id_card)
+                print("Text:", text)
+                id_card_to_update = id
+                csvFile = pd.read_csv('bukuperpus.csv')
+                df = pd.DataFrame(csvFile)
+                df.loc[df['Id card'] == id_card_to_update, 'Tanggal pengembalian'] = now
+                df.to_csv('bukuperpus.csv', index=False)
+                matching_row = df[df['Id card'] == id_card_to_update]
+                if not matching_row.empty:
+                    full_data_kolom_ketiga = str(matching_row.iloc[0, 2])
+
+                    trimmed_data_kolom_ketiga = full_data_kolom_ketiga[1:]
+
+                    book_id = trimmed_data_kolom_ketiga[:4]
+                    
+                    d.value = book_id
+
+                else:
+                    print("ID Kartu tidak cocok dengan data yang ada.") 
+                
+                print("Data telah diperbarui")
+                send_notification_to_bot(id_card)
+                send_notification_to_bot("Buku telah dikembalikan " + now.strftime("%Y-%m-%d"))
+               
+                ulangi = input("Ingin melakukan pengembalian lagi? (y/n): ")
+                if ulangi.lower() != 'y':
+                    break
+
+        elif selected_mode == 0:
+                ulangi = input("Ingin melakukan pilihan yang lain? (y/n): ")
+                if ulangi.lower() != 'y':
+                    print("Netral")
+                    break
+
+        else:
+            print("Mode tidak valid. Pilih 1 untuk meminjam, 2 untuk mengembalikan, 3 untuk memeriksa status, atau q untuk keluar.")
+
+if __name__ == "__main__":
+    main()
+
